@@ -14,7 +14,7 @@ const schemaSQLFile = `
 -- This file was automatically generated from the \`TUTORIAL.md\` which
 -- contains a complete explanation of how this schema works and why certain
 -- decisions were made. If you are looking for a comprehensive tutorial,
--- definetly check it out as this file is a little tough to read.
+-- definitely check it out as this file is a little tough to read.
 --
 -- If you want to contribute to this file, please change the
 -- \`TUTORIAL.md\` file and then rebuild this file :)
@@ -32,7 +32,7 @@ ${schemaMarkdownFile
     if (isInsideMarkdownSQLCode) {
       // If this line closes our SQL, do not include this line, but do
       // change our state.
-      if (line === '```') {
+      if (line.trim() === '```') {
         isInsideMarkdownSQLCode = false
         return `${sql}\n`
       }
@@ -42,7 +42,7 @@ ${schemaMarkdownFile
     // code so far.
     else {
       // If this line opens a block of SQL, change our state.
-      if (line === '```sql')
+      if (line.trim() === '```sql')
         isInsideMarkdownSQLCode = true
 
       return sql

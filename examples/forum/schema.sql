@@ -1,7 +1,7 @@
 -- This file was automatically generated from the `TUTORIAL.md` which
 -- contains a complete explanation of how this schema works and why certain
 -- decisions were made. If you are looking for a comprehensive tutorial,
--- definetly check it out as this file is a little tough to read.
+-- definitely check it out as this file is a little tough to read.
 --
 -- If you want to contribute to this file, please change the
 -- `TUTORIAL.md` file and then rebuild this file :)
@@ -51,6 +51,8 @@ comment on column forum_example.post.topic is 'The topic this has been posted in
 comment on column forum_example.post.body is 'The main body text of our post.';
 comment on column forum_example.post.created_at is 'The time this post was created.';
 
+alter default privileges revoke execute on functions from public;
+
 create function forum_example.person_full_name(person forum_example.person) returns text as $$
   select person.first_name || ' ' || person.last_name
 $$ language sql stable;
@@ -78,7 +80,7 @@ create function forum_example.person_latest_post(person forum_example.person) re
   limit 1
 $$ language sql stable;
 
-comment on function forum_example.person_latest_post(forum_example.person) is 'Get’s the latest post written by the person.';
+comment on function forum_example.person_latest_post(forum_example.person) is 'Gets the latest post written by the person.';
 
 create function forum_example.search_posts(search text) returns setof forum_example.post as $$
   select post.*
@@ -143,13 +145,13 @@ $$ language plpgsql strict security definer;
 
 comment on function forum_example.register_person(text, text, text, text) is 'Registers a single user and creates an account in our forum.';
 
-create role forum_example_postgraphql login password 'xyz';
+create role forum_example_postgraphile login password 'xyz';
 
 create role forum_example_anonymous;
-grant forum_example_anonymous to forum_example_postgraphql;
+grant forum_example_anonymous to forum_example_postgraphile;
 
 create role forum_example_person;
-grant forum_example_person to forum_example_postgraphql;
+grant forum_example_person to forum_example_postgraphile;
 
 create type forum_example.jwt_token as (
   role text,
@@ -160,30 +162,38 @@ create function forum_example.authenticate(
   email text,
   password text
 ) returns forum_example.jwt_token as $$
-declare
-  account forum_example_private.person_account;
-begin
-  select a.* into account
-  from forum_example_private.person_account as a
-  where a.email = $1;
-
-  if account.password_hash = crypt(password, account.password_hash) then
-    return ('forum_example_person', account.person_id)::forum_example.jwt_token;
-  else
-    return null;
-  end if;
-end;
-$$ language plpgsql strict security definer;
+  select ('forum_example_person', person_id)::forum_example.jwt_token
+    from forum_example_private.person_account
+    where 
+      person_account.email = $1 
+      and person_account.password_hash = crypt($2, person_account.password_hash);
+$$ language sql strict security definer;
 
 comment on function forum_example.authenticate(text, text) is 'Creates a JWT token that will securely identify a person and give them certain permissions.';
 
 create function forum_example.current_person() returns forum_example.person as $$
   select *
   from forum_example.person
-  where id = current_setting('jwt.claims.person_id')::integer
+  where id = current_setting('jwt.claims.person_id', true)::integer
 $$ language sql stable;
 
 comment on function forum_example.current_person() is 'Gets the person who was identified by our JWT.';
+
+create function forum_example.change_password(current_password text, new_password text) 
+returns boolean as $$
+declare
+  current_person forum_example.person;
+begin
+  current_person := forum_example.current_person();
+  if exists (select 1 from forum_example_private.person_account where person_account.person_id = current_person.id and person_account.password_hash = crypt($1, person_account.password_hash)) 
+  then
+    update forum_example_private.person_account set password_hash = crypt($2, gen_salt('bf')) where person_account.person_id = current_person.id; 
+    return true;
+  else 
+    return false;
+  end if;
+end;
+$$ language plpgsql strict security definer;
 
 grant usage on schema forum_example to forum_example_anonymous, forum_example_person;
 
@@ -200,6 +210,7 @@ grant execute on function forum_example.person_latest_post(forum_example.person)
 grant execute on function forum_example.search_posts(text) to forum_example_anonymous, forum_example_person;
 grant execute on function forum_example.authenticate(text, text) to forum_example_anonymous, forum_example_person;
 grant execute on function forum_example.current_person() to forum_example_anonymous, forum_example_person;
+grant execute on function forum_example.change_password(text, text) to forum_example_person;
 
 grant execute on function forum_example.register_person(text, text, text, text) to forum_example_anonymous;
 
@@ -213,19 +224,19 @@ create policy select_post on forum_example.post for select
   using (true);
 
 create policy update_person on forum_example.person for update to forum_example_person
-  using (id = current_setting('jwt.claims.person_id')::integer);
+  using (id = current_setting('jwt.claims.person_id', true)::integer);
 
 create policy delete_person on forum_example.person for delete to forum_example_person
-  using (id = current_setting('jwt.claims.person_id')::integer);
+  using (id = current_setting('jwt.claims.person_id', true)::integer);
 
 create policy insert_post on forum_example.post for insert to forum_example_person
-  with check (author_id = current_setting('jwt.claims.person_id')::integer);
+  with check (author_id = current_setting('jwt.claims.person_id', true)::integer);
 
 create policy update_post on forum_example.post for update to forum_example_person
-  using (author_id = current_setting('jwt.claims.person_id')::integer);
+  using (author_id = current_setting('jwt.claims.person_id', true)::integer);
 
 create policy delete_post on forum_example.post for delete to forum_example_person
-  using (author_id = current_setting('jwt.claims.person_id')::integer);
+  using (author_id = current_setting('jwt.claims.person_id', true)::integer);
 
 
 commit;
